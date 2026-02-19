@@ -417,6 +417,17 @@
                 `;
             }
 
+            // Preventative discount row
+            let preventativeHtml = '';
+            if (data.preventativeDiscount > 0) {
+                preventativeHtml = `
+                    <div class="calc-row">
+                        <span class="calc-label">Preventative Discount Recapture</span>
+                        <span class="calc-value">${formatCurrency(data.preventativeDiscount)}</span>
+                    </div>
+                `;
+            }
+
             // Late fees row
             let lateFeesHtml = '';
             if (data.lateFees > 0) {
@@ -481,6 +492,7 @@
                             <span class="calc-label">Total Retail Value of Services Used</span>
                             <span class="calc-value">${formatCurrency(data.totalServices)}</span>
                         </div>
+                        ${preventativeHtml}
                         <div class="calc-row">
                             <span class="calc-label">Total Payments Made Into Plan</span>
                             <span class="calc-value">${formatCurrency(data.totalPayments)}</span>
@@ -496,7 +508,7 @@
                     ${contextHtml}
 
                     <div class="explanation">
-                        <strong>How this was calculated:</strong> When a wellness plan is cancelled early, the retail value of all services already received is totaled. This amount, plus any applicable late fees, is compared against the total payments you have made into the plan. The difference determines whether a balance is due.
+                        <strong>How this was calculated:</strong> When a wellness plan is cancelled early, the retail value of all services already received is totaled. This amount, plus any applicable preventative discount recapture and late fees, is compared against the total payments you have made into the plan. The difference determines whether a balance is due.
                     </div>
                 </div>
                 <div class="footer">
