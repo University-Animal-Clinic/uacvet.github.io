@@ -441,6 +441,19 @@
             `;
         }
 
+        // Everything in the payload arrives from a URL, so any of it can be
+        // attacker-supplied. Escaped before it reaches innerHTML so a crafted
+        // link cannot inject markup into a clinic-branded page.
+        function esc(v) {
+            if (v === undefined || v === null) return '';
+            return String(v)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         function formatCurrency(amount) {
             return '$' + Math.abs(amount).toFixed(2);
         }
@@ -458,7 +471,7 @@
             const usingMember = data.pricingBasis === 'member';
             const bereavement = data.reasonCode === 'deceased';
             const rateHeader = usingMember ? 'Your Plan Rate' : 'Retail Price';
-            const petName = data.petName || 'your pet';
+            const petName = esc(data.petName) || 'your pet';
 
             // Build services rows. The Qty column shows the quantity actually
             // billed so that rate x qty reconciles to the line total; anything
@@ -468,16 +481,17 @@
                 data.services.forEach(function(svc) {
                     const unit = (svc.unitPrice !== undefined && svc.unitPrice !== null)
                         ? svc.unitPrice : svc.retailPrice;
-                    const billed = (svc.billedQty !== undefined && svc.billedQty !== null)
-                        ? svc.billedQty : svc.qty;
-                    const freeQty = (svc.qty || 0) - billed;
+                    const billed = Number(
+                        (svc.billedQty !== undefined && svc.billedQty !== null) ? svc.billedQty : svc.qty
+                    ) || 0;
+                    const freeQty = (Number(svc.qty) || 0) - billed;
                     const note = (freeQty > 0)
-                        ? '<div class="svc-note">' + svc.qty + ' received &mdash; ' +
+                        ? '<div class="svc-note">' + (Number(svc.qty) || 0) + ' received &mdash; ' +
                           freeQty + ' at no charge</div>'
                         : '';
                     servicesHtml += `
                         <tr>
-                            <td>${svc.name}${note}</td>
+                            <td>${esc(svc.name)}${note}</td>
                             <td class="right">${formatCurrency(unit)}</td>
                             <td class="center">${billed}</td>
                             <td class="right">${formatCurrency(svc.fee)}</td>
@@ -616,21 +630,21 @@
                     <div class="client-info">
                         <div class="info-item">
                             <div class="info-label">Client</div>
-                            <div class="info-value">${data.clientName}</div>
+                            <div class="info-value">${esc(data.clientName)}</div>
                         </div>
                         <div class="info-item">
                             <div class="info-label">Pet</div>
-                            <div class="info-value">${data.petName}</div>
+                            <div class="info-value">${esc(data.petName)}</div>
                         </div>
                         <div class="info-item">
                             <div class="info-label">Cancellation Date</div>
-                            <div class="info-value">${data.cancelDate}</div>
+                            <div class="info-value">${esc(data.cancelDate)}</div>
                         </div>
                     </div>
 
                     <div class="plan-badge ${speciesClass}">
                         <span>${speciesIcon}</span>
-                        <span>${data.planName}</span>
+                        <span>${esc(data.planName)}</span>
                     </div>
 
                     ${headlineHtml}
