@@ -303,6 +303,81 @@
                 print-color-adjust: exact;
             }
         }
+
+        /* ===== Bereavement / plan-rate presentation ===== */
+        .summary-intro {
+            background: var(--gray-light);
+            border-left: 4px solid var(--gray-300);
+            padding: 16px 20px;
+            border-radius: 8px;
+            font-size: 15px;
+            line-height: 1.7;
+            color: var(--gray-600);
+            margin-bottom: 24px;
+        }
+        .summary-intro.bereavement { border-left-color: var(--yellow-main); }
+        .summary-intro p { margin: 0; }
+        .summary-intro .intro-lead + .intro-body { margin-top: 12px; }
+        .summary-intro .intro-body { font-size: 14px; }
+
+        /* States the outcome before the table, so the reader is not left
+           working through line items to find out where they stand. */
+        .headline-notice {
+            padding: 16px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            line-height: 1.7;
+            color: var(--gray-600);
+            border-left: 4px solid;
+            margin-bottom: 24px;
+        }
+        .headline-notice strong { display: block; font-size: 17px; margin-bottom: 4px; }
+        .headline-notice.refund  { background: #E8F5E9; border-color: #2E7D32; }
+        .headline-notice.refund strong  { color: #1B5E20; }
+        .headline-notice.payment { background: #FFF8E1; border-color: var(--yellow-main); }
+        .headline-notice.payment strong { color: #6a5300; }
+
+        /* Services provided beyond what the plan covers */
+        .svc-note {
+            margin-top: 4px;
+            font-size: 12px;
+            color: var(--gray-500);
+            font-style: italic;
+        }
+
+        /* Makes the subtraction visible instead of leaving the reader to
+           infer that two listed numbers relate to each other. */
+        .calc-op {
+            display: inline-block;
+            width: 14px;
+            font-weight: 700;
+            color: var(--gray-700);
+        }
+        .calc-row.equation-result {
+            border-bottom: none;
+            border-top: 2px solid var(--gray-700);
+            margin-top: 4px;
+            padding-top: 12px;
+        }
+        .calc-row.equation-result .calc-label { color: var(--gray-700); font-weight: 700; }
+        .calc-row.equation-result .calc-value { font-size: 18px; }
+
+        @media print {
+            @page { margin: 12mm; }
+            body { background: white; }
+            .cancel-container,
+            .cancel-header,
+            .cancel-body,
+            .footer { box-shadow: none !important; }
+            .services-table { page-break-inside: auto; }
+            .services-table tr { page-break-inside: avoid; }
+            .calc-summary,
+            .result-box,
+            .headline-notice,
+            .summary-intro,
+            .explanation { page-break-inside: avoid; }
+            .context-message { page-break-inside: avoid; }
+        }
     </style>
 </head>
 <body>
@@ -342,6 +417,12 @@
 
                 const data = JSON.parse(jsonString);
                 renderCancellation(data);
+
+                // Staff printing routes through here so the printed page is the
+                // client's document itself, not a separate worksheet layout.
+                if (urlParams.get('print') === '1') {
+                    setTimeout(function () { window.print(); }, 250);
+                }
             } catch (error) {
                 console.error('Error parsing cancellation data:', error);
                 showError('Unable to Load Summary', 'This cancellation summary link may be expired or invalid. Please contact University Animal Clinic to request a new summary.');
@@ -372,15 +453,33 @@
             const speciesClass = isCanine ? 'canine' : 'feline';
             const speciesIcon = isCanine ? '🐶' : '🐱';
 
-            // Build services rows
+            // Links created before bereavement pricing existed carry no
+            // pricingBasis; every one of those was a retail cancellation.
+            const usingMember = data.pricingBasis === 'member';
+            const bereavement = data.reasonCode === 'deceased';
+            const rateHeader = usingMember ? 'Your Plan Rate' : 'Retail Price';
+            const petName = data.petName || 'your pet';
+
+            // Build services rows. The Qty column shows the quantity actually
+            // billed so that rate x qty reconciles to the line total; anything
+            // provided beyond that is called out under the service name.
             let servicesHtml = '';
             if (data.services && data.services.length > 0) {
                 data.services.forEach(function(svc) {
+                    const unit = (svc.unitPrice !== undefined && svc.unitPrice !== null)
+                        ? svc.unitPrice : svc.retailPrice;
+                    const billed = (svc.billedQty !== undefined && svc.billedQty !== null)
+                        ? svc.billedQty : svc.qty;
+                    const freeQty = (svc.qty || 0) - billed;
+                    const note = (freeQty > 0)
+                        ? '<div class="svc-note">' + svc.qty + ' received &mdash; ' +
+                          freeQty + ' at no charge</div>'
+                        : '';
                     servicesHtml += `
                         <tr>
-                            <td>${svc.name}</td>
-                            <td class="right">${formatCurrency(svc.retailPrice)}</td>
-                            <td class="center">${svc.qty}</td>
+                            <td>${svc.name}${note}</td>
+                            <td class="right">${formatCurrency(unit)}</td>
+                            <td class="center">${billed}</td>
                             <td class="right">${formatCurrency(svc.fee)}</td>
                             <td class="right bold">${formatCurrency(svc.total)}</td>
                         </tr>
@@ -401,6 +500,89 @@
                 resultLabel = 'Account Is Even — No Balance Due';
             }
 
+            // Opening block: condolence when a pet has passed, then a plain
+            // statement of what the document contains, so the figures below do
+            // not arrive without context.
+            var introLead = bereavement
+                ? 'We are so sorry for the loss of <strong>' + petName + '</strong>. ' +
+                  'Everyone at University Animal Clinic is thinking of you.'
+                : '';
+            var introBody = usingMember
+                ? 'Below is a summary of the care ' + petName + ' received on the wellness plan. ' +
+                  'Services are shown at your plan rate rather than at retail prices, set against the ' +
+                  'payments you made into the plan &mdash; the difference between the two is the final amount.'
+                : 'Below is a summary of the services ' + petName + ' received on the wellness plan, set ' +
+                  'against the payments you made into the plan. The difference between the two is the ' +
+                  'final amount.';
+
+            let condolenceHtml = `
+                <div class="summary-intro${bereavement ? ' bereavement' : ''}">
+                    ${introLead ? '<p class="intro-lead">' + introLead + '</p>' : ''}
+                    <p class="intro-body">${introBody}</p>
+                </div>
+            `;
+
+            // The outcome is stated up front so nobody has to work through a
+            // table to find out whether money is owed or coming back.
+            let headlineHtml = '';
+            if (data.balance < -0.005) {
+                headlineHtml = `
+                    <div class="headline-notice refund">
+                        <strong>A refund of ${formatCurrency(data.balance)} is due to you.</strong>
+                        The breakdown below shows exactly how that figure was reached.
+                    </div>
+                `;
+            } else if (data.balance > 0.005) {
+                headlineHtml = `
+                    <div class="headline-notice payment">
+                        <strong>A balance of ${formatCurrency(data.balance)} remains on this account.</strong>
+                        The breakdown below shows exactly how that figure was reached.
+                    </div>
+                `;
+            }
+
+            // Optional middle rows of the equation
+            let extraRows = '';
+            if (data.preventativeDiscount > 0) {
+                extraRows += `
+                    <div class="calc-row">
+                        <span class="calc-label"><span class="calc-op">+</span>Preventative discount recapture</span>
+                        <span class="calc-value">${formatCurrency(data.preventativeDiscount)}</span>
+                    </div>
+                `;
+            }
+            if (data.lateFees > 0) {
+                extraRows += `
+                    <div class="calc-row">
+                        <span class="calc-label"><span class="calc-op">+</span>Late fees</span>
+                        <span class="calc-value">${formatCurrency(data.lateFees)}</span>
+                    </div>
+                `;
+            }
+
+            const servicesRowLabel = usingMember
+                ? 'Services received, at your plan rate'
+                : 'Retail value of services received';
+
+            // Explanation. In bereavement mode this has to answer "why am I
+            // being charged for exams at all" before it explains the rate —
+            // a client whose visits were included reads a priced line as a new
+            // charge rather than a reduced one.
+            const explanationHtml = usingMember
+                ? `<strong>How this was calculated:</strong> Your wellness plan spreads the cost of a
+                   full year of care across monthly payments, and those payments cover the services
+                   received during the plan year. When a plan ends before the year is complete, the
+                   services already provided are settled against the payments already made, and the
+                   difference is either a balance due or a refund. In these circumstances the services
+                   have been settled at your plan rate rather than at retail prices. Office visits and
+                   nail trims have been limited to the number your plan covers, and any beyond that
+                   are included at no charge.`
+                : `<strong>How this was calculated:</strong> When a wellness plan is cancelled early,
+                   the retail value of all services already received is totaled. This amount, plus any
+                   applicable preventative discount recapture and late fees, is compared against the
+                   total payments you have made into the plan. The difference determines whether a
+                   balance is due.`;
+
             // Contextual message
             let contextHtml = '';
             if (data.balance > 0.005) {
@@ -413,28 +595,6 @@
                 contextHtml = `
                     <div class="context-message refund">
                         <strong>✅ Refund Information:</strong> A refund check in the amount shown above will be mailed to the address we have on file for your account. Please allow 2–4 weeks for processing and delivery. If you need to update your mailing address, please call us at <strong>(941) 355-7707</strong>.
-                    </div>
-                `;
-            }
-
-            // Preventative discount row
-            let preventativeHtml = '';
-            if (data.preventativeDiscount > 0) {
-                preventativeHtml = `
-                    <div class="calc-row">
-                        <span class="calc-label">Preventative Discount Recapture</span>
-                        <span class="calc-value">${formatCurrency(data.preventativeDiscount)}</span>
-                    </div>
-                `;
-            }
-
-            // Late fees row
-            let lateFeesHtml = '';
-            if (data.lateFees > 0) {
-                lateFeesHtml = `
-                    <div class="calc-row">
-                        <span class="calc-label">Late Fees</span>
-                        <span class="calc-value">${formatCurrency(data.lateFees)}</span>
                     </div>
                 `;
             }
@@ -452,6 +612,7 @@
                     </div>
                 </div>
                 <div class="cancel-body">
+                    ${condolenceHtml}
                     <div class="client-info">
                         <div class="info-item">
                             <div class="info-label">Client</div>
@@ -472,11 +633,13 @@
                         <span>${data.planName}</span>
                     </div>
 
+                    ${headlineHtml}
+
                     <table class="services-table">
                         <thead>
                             <tr>
                                 <th>Service</th>
-                                <th class="right">Retail Price</th>
+                                <th class="right">${rateHeader}</th>
                                 <th class="center">Qty</th>
                                 <th class="right">Svc Fee</th>
                                 <th class="right">Total</th>
@@ -489,15 +652,18 @@
 
                     <div class="calc-summary">
                         <div class="calc-row">
-                            <span class="calc-label">Total Retail Value of Services Used</span>
+                            <span class="calc-label">${servicesRowLabel}</span>
                             <span class="calc-value">${formatCurrency(data.totalServices)}</span>
                         </div>
-                        ${preventativeHtml}
+                        ${extraRows}
                         <div class="calc-row">
-                            <span class="calc-label">Total Payments Made Into Plan</span>
+                            <span class="calc-label"><span class="calc-op">&minus;</span>Payments you made into the plan</span>
                             <span class="calc-value">${formatCurrency(data.totalPayments)}</span>
                         </div>
-                        ${lateFeesHtml}
+                        <div class="calc-row equation-result">
+                            <span class="calc-label"><span class="calc-op">=</span>Difference</span>
+                            <span class="calc-value">${formatCurrency(data.balance)}</span>
+                        </div>
                     </div>
 
                     <div class="result-box ${resultClass}">
@@ -508,7 +674,7 @@
                     ${contextHtml}
 
                     <div class="explanation">
-                        <strong>How this was calculated:</strong> When a wellness plan is cancelled early, the retail value of all services already received is totaled. This amount, plus any applicable preventative discount recapture and late fees, is compared against the total payments you have made into the plan. The difference determines whether a balance is due.
+                        ${explanationHtml}
                     </div>
                 </div>
                 <div class="footer">
