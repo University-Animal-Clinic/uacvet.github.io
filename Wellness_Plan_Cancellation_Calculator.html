@@ -1297,6 +1297,10 @@ UklGRnJrAQBXRUJQVlA4WAoAAAAwAAAAzwcA7gMASUNDUMgBAAAAAAHIAAAAAAQwAABtbnRyUkdCIFhZ
                 <option value="standard">Standard cancellation</option>
                 <option value="deceased">Pet passed away</option>
             </select>
+            <label class="plan-active-toggle" id="planActiveWrap" style="display:none;margin-top:8px;font-weight:600;font-size:13px;cursor:pointer;">
+                <input type="checkbox" id="planActive" onchange="renderAll()" style="margin-right:6px;">
+                Plan left active (family may keep monthly payments)
+            </label>
         </div>
     </div>
 
@@ -1783,6 +1787,14 @@ function setCancelReason(value) {
 function syncReasonUI() {
     var cfg = reasonConfig();
 
+    // "Plan left active" only means something when the pet has passed.
+    var paWrap = document.getElementById('planActiveWrap');
+    if (paWrap) {
+        var isDeceased = currentReasonCode() === 'deceased';
+        paWrap.style.display = isDeceased ? 'block' : 'none';
+        if (!isDeceased) document.getElementById('planActive').checked = false;
+    }
+
     // Waived charges are zeroed and hidden, so nothing on screen or in print
     // implies a penalty and there is nothing for staff to forget to clear.
     var prevRow = document.getElementById('preventativeDiscount').closest('.calc-row');
@@ -2053,6 +2065,7 @@ function resetForm() {
     setCancelReason('standard');
     document.getElementById('clientName').value = '';
     document.getElementById('petName').value = '';
+    if (document.getElementById('planActive')) document.getElementById('planActive').checked = false;
     document.getElementById('cancelDate').value = '';
     document.getElementById('preventativeDiscount').value = 0;
     document.getElementById('totalPayments').value = '';
@@ -2334,6 +2347,8 @@ function buildViewerLink(forEmail) {
         planName: plan.name,
         species: isCanine ? 'canine' : 'feline',
         reasonCode: currentReasonCode(),
+        // Plan kept running so the family can keep their monthly payments.
+        planActive: currentReasonCode() === 'deceased' && document.getElementById('planActive').checked,
         reasonLabel: reasonConfig().label,
         pricingBasis: totals.basis,
         services: usedServices,
@@ -2460,8 +2475,12 @@ function buildBereavementLetter(data) {
     paras.push(first ? 'Hi ' + first + ',' : 'Hello,');
     paras.push("We've been thinking about you since " + pet + " passed. Losing a member of the family " +
                "is so hard, and all of us here are so sorry.");
-    paras.push("We wanted to take care of one last thing so it isn't on your mind. We've closed out " +
-               pet + "'s wellness plan and stopped the monthly payments.");
+    var keepOpen = !!data.planActive && data.balance > 0.005;
+    paras.push(keepOpen
+        ? "We also wanted to give you an update on " + pet + "'s wellness plan so it isn't " +
+          "on your mind."
+        : "We wanted to take care of one last thing so it isn't on your mind. We've closed out " +
+          pet + "'s wellness plan and stopped the monthly payments.");
 
     if (data.totalServices > 0.005) {
         var p = 'We also made sure the plan worked in your favor. All of ' + pet + "'s care has been " +
@@ -2476,7 +2495,14 @@ function buildBereavementLetter(data) {
         paras.push(p);
     }
 
-    if (data.balance > 0.005) {
+    if (keepOpen) {
+        paras.push("After the payments you've already made, " + _money(data.balance) + ' remains, and ' +
+                   'you have two easy choices. You can take care of it all at once by calling us at ' +
+                   "(941) 355-7707, and we'll close out the plan. Or, if it's easier, you don't need to do " +
+                   'anything. Your regular monthly payments will simply continue through the end of the ' +
+                   "plan year, and we'll settle any difference with you then. If now isn't a good time " +
+                   "to think about it, that's completely fine.");
+    } else if (data.balance > 0.005) {
         paras.push("After the payments you've already made, " + _money(data.balance) + ' remains. ' +
                    "There is no rush on this at all. Whenever you're ready, you can call us at " +
                    "(941) 355-7707 or stop by the front desk. If now isn't a good time, just let us " +

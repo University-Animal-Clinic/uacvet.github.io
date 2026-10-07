@@ -638,7 +638,17 @@
 
             // Contextual message
             let contextHtml = '';
-            if (bereavement && data.balance > 0.005) {
+            const keepOpen = bereavement && data.planActive && data.balance > 0.005;
+            if (keepOpen) {
+                contextHtml = `
+                    <div class="context-message gentle">
+                        You have two easy choices. You can take care of the remaining amount all at once by
+                        calling us at <strong>(941) 355-7707</strong>, and we'll close out the plan. Or you
+                        don't need to do anything: your regular monthly payments will continue through the
+                        end of the plan year, and we'll settle any difference with you then.
+                    </div>
+                `;
+            } else if (bereavement && data.balance > 0.005) {
                 contextHtml = `
                     <div class="context-message gentle">
                         There is no rush on this at all. Whenever you're ready, you can call us at
@@ -748,7 +758,7 @@
                             <div class="info-value">${esc(data.petName)}</div>
                         </div>
                         <div class="info-item">
-                            <div class="info-label">${bereavement ? 'Plan Closed' : 'Cancellation Date'}</div>
+                            <div class="info-label">${bereavement ? (data.planActive && data.balance > 0.005 ? 'Summary Date' : 'Plan Closed') : 'Cancellation Date'}</div>
                             <div class="info-value">${esc(data.cancelDate)}</div>
                         </div>
                     </div>
