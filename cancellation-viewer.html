@@ -643,9 +643,9 @@
                 contextHtml = `
                     <div class="context-message gentle">
                         You have two easy choices. You can take care of the remaining amount all at once by
-                        calling us at <strong>(941) 355-7707</strong>, and we'll close out the plan. Or you
-                        don't need to do anything: your regular monthly payments will continue through the
-                        end of the plan year, and we'll settle any difference with you then.
+                        calling us at <strong>(941) 355-7707</strong>, and we'll close out the plan. Or you can
+                        keep your regular monthly payments going through the end of the plan year${Number(data.remainingPlan) > 0 ? ', which adds up to <strong>' + formatCurrency(Number(data.remainingPlan)) + '</strong>' : ''},
+                        and then the plan simply ends with nothing more to settle.
                     </div>
                 `;
             } else if (bereavement && data.balance > 0.005) {

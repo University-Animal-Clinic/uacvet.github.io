@@ -1301,6 +1301,10 @@ UklGRnJrAQBXRUJQVlA4WAoAAAAwAAAAzwcA7gMASUNDUMgBAAAAAAHIAAAAAAQwAABtbnRyUkdCIFhZ
                 <input type="checkbox" id="planActive" onchange="renderAll()" style="margin-right:6px;">
                 Plan left active (family may keep monthly payments)
             </label>
+            <div id="remainingPlanWrap" style="display:none;margin-top:6px;">
+                <label style="font-size:12px;">Remaining Plan Balance (from Care Plans)</label>
+                <input type="number" id="remainingPlanBalance" step="0.01" min="0" placeholder="0.00" oninput="renderAll()">
+            </div>
         </div>
     </div>
 
@@ -1793,6 +1797,8 @@ function syncReasonUI() {
         var isDeceased = currentReasonCode() === 'deceased';
         paWrap.style.display = isDeceased ? 'block' : 'none';
         if (!isDeceased) document.getElementById('planActive').checked = false;
+        var rpWrap = document.getElementById('remainingPlanWrap');
+        if (rpWrap) rpWrap.style.display = document.getElementById('planActive').checked ? 'block' : 'none';
     }
 
     // Waived charges are zeroed and hidden, so nothing on screen or in print
@@ -2066,6 +2072,7 @@ function resetForm() {
     document.getElementById('clientName').value = '';
     document.getElementById('petName').value = '';
     if (document.getElementById('planActive')) document.getElementById('planActive').checked = false;
+    if (document.getElementById('remainingPlanBalance')) document.getElementById('remainingPlanBalance').value = '';
     document.getElementById('cancelDate').value = '';
     document.getElementById('preventativeDiscount').value = 0;
     document.getElementById('totalPayments').value = '';
@@ -2314,6 +2321,12 @@ function buildViewerLink(forEmail) {
                  message: 'Please enter at least one service quantity first.' };
     }
 
+    if (currentReasonCode() === 'deceased' && document.getElementById('planActive').checked &&
+        totals.balance > 0.005 && !(parseFloat(document.getElementById('remainingPlanBalance').value) > 0)) {
+        return { ok: false, level: 'warning', title: 'Remaining Plan Balance Needed',
+                 message: 'Enter the Remaining Plan Balance from the Care Plans cancel screen so the family can compare both choices.' };
+    }
+
     var clientName = document.getElementById('clientName').value || 'Valued Client';
     var petName = document.getElementById('petName').value || 'Your Pet';
     var cancelDate = document.getElementById('cancelDate').value;
@@ -2349,6 +2362,7 @@ function buildViewerLink(forEmail) {
         reasonCode: currentReasonCode(),
         // Plan kept running so the family can keep their monthly payments.
         planActive: currentReasonCode() === 'deceased' && document.getElementById('planActive').checked,
+        remainingPlan: Math.round((parseFloat(document.getElementById('remainingPlanBalance').value) || 0) * 100) / 100,
         reasonLabel: reasonConfig().label,
         pricingBasis: totals.basis,
         services: usedServices,
@@ -2477,7 +2491,7 @@ function buildBereavementLetter(data) {
                "is so hard, and all of us here are so sorry.");
     var keepOpen = !!data.planActive && data.balance > 0.005;
     paras.push(keepOpen
-        ? "We also wanted to give you an update on " + pet + "'s wellness plan so it isn't " +
+        ? "We wanted to give you an update on " + pet + "'s wellness plan so it isn't " +
           "on your mind."
         : "We wanted to take care of one last thing so it isn't on your mind. We've closed out " +
           pet + "'s wellness plan and stopped the monthly payments.");
@@ -2498,10 +2512,10 @@ function buildBereavementLetter(data) {
     if (keepOpen) {
         paras.push("After the payments you've already made, " + _money(data.balance) + ' remains, and ' +
                    'you have two easy choices. You can take care of it all at once by calling us at ' +
-                   "(941) 355-7707, and we'll close out the plan. Or, if it's easier, you don't need to do " +
-                   'anything. Your regular monthly payments will simply continue through the end of the ' +
-                   "plan year, and we'll settle any difference with you then. If now isn't a good time " +
-                   "to think about it, that's completely fine.");
+                   "(941) 355-7707, and we'll close out the plan. Or you can keep your regular monthly " +
+                   'payments going through the end of the plan year, which adds up to ' +
+                   _money(data.remainingPlan) + ', and then the plan simply ends with nothing more to ' +
+                   "settle. If now isn't a good time to think about it, that's completely fine.");
     } else if (data.balance > 0.005) {
         paras.push("After the payments you've already made, " + _money(data.balance) + ' remains. ' +
                    "There is no rush on this at all. Whenever you're ready, you can call us at " +
