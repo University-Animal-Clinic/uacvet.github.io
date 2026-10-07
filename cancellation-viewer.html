@@ -378,6 +378,26 @@
             .explanation { page-break-inside: avoid; }
             .context-message { page-break-inside: avoid; }
         }
+    /* ===== Bereavement layout (pet passed away) =====
+           Leads with the value of care received and what the plan saved,
+           so the remaining amount is the last and smallest number on the page. */
+        .care-value { margin: 24px 0; border: 1px solid var(--gray-200); border-radius: 10px; overflow: hidden; }
+        .care-value h3 { font-size: 19px; padding: 16px 20px 4px; color: var(--gray-700); font-weight: 400; }
+        .care-value .cv-sub { padding: 0 20px 10px; font-size: 13px; color: var(--gray-500); }
+        .care-value .calc-summary { margin: 0; border: none; border-radius: 0; }
+        .savings-box { display: flex; justify-content: space-between; align-items: center; gap: 16px;
+            background: var(--yellow-light); border-top: 1px solid var(--gray-200); padding: 16px 20px; }
+        .savings-box .sv-label { font-weight: 600; color: var(--gray-700); }
+        .savings-box .sv-note { font-size: 13px; color: var(--gray-500); margin-top: 2px; }
+        .savings-box .sv-amount { font-size: 26px; font-weight: 700; color: #6a5300; white-space: nowrap; }
+        .result-box.gentle { background: var(--gray-light); border-color: var(--gray-300); }
+        .result-box.gentle .result-label,
+        .result-box.gentle .result-amount { color: var(--gray-700); }
+        .context-message.gentle { background: var(--gray-light); border-left: 4px solid var(--yellow-main); color: var(--gray-600); }
+        .details-heading { font-size: 15px; font-family: 'DM Sans', sans-serif; font-weight: 700; color: var(--gray-600); margin: 28px 0 0; }
+        @media (max-width: 560px) {
+            .savings-box { flex-direction: column; align-items: flex-start; }
+        }
     </style>
 </head>
 <body>
@@ -486,7 +506,7 @@
                     ) || 0;
                     const freeQty = (Number(svc.qty) || 0) - billed;
                     const note = (freeQty > 0)
-                        ? '<div class="svc-note">' + (Number(svc.qty) || 0) + ' received &mdash; ' +
+                        ? '<div class="svc-note">' + (Number(svc.qty) || 0) + ' received, ' +
                           freeQty + ' at no charge</div>'
                         : '';
                     servicesHtml += `
@@ -504,15 +524,28 @@
             // Determine result state
             var resultClass, resultLabel;
             if (data.balance > 0.005) {
-                resultClass = 'owes-client';
-                resultLabel = 'Balance Due from Client';
+                resultClass = bereavement ? 'gentle' : 'owes-client';
+                resultLabel = bereavement ? 'Remaining amount' : 'Balance Due from Client';
             } else if (data.balance < -0.005) {
                 resultClass = 'owes-clinic';
-                resultLabel = 'Refund Due to Client';
+                resultLabel = bereavement ? 'Refund to you' : 'Refund Due to Client';
             } else {
-                resultClass = 'even';
-                resultLabel = 'Account Is Even — No Balance Due';
+                resultClass = bereavement ? 'gentle' : 'even';
+                resultLabel = bereavement ? 'Nothing more is owed' : 'Account Is Even — No Balance Due';
             }
+
+            // Bereavement: the regular (retail) value of everything received,
+            // including visits and trims given at no charge. Older links
+            // without retail prices fall back to the plan-rate total.
+            var retailValue = 0, haveRetail = true;
+            (data.services || []).forEach(function(svc) {
+                var r = Number(svc.retailPrice);
+                if (!isFinite(r)) { haveRetail = false; return; }
+                retailValue += r * (Number(svc.qty) || 0) + (Number(svc.fee) || 0);
+            });
+            retailValue = Math.round(retailValue * 100) / 100;
+            if (!haveRetail || retailValue < data.totalServices) retailValue = data.totalServices;
+            var savings = Math.round((retailValue - data.totalServices) * 100) / 100;
 
             // Opening block: condolence when a pet has passed, then a plain
             // statement of what the document contains, so the figures below do
@@ -521,7 +554,10 @@
                 ? 'We are so sorry for the loss of <strong>' + petName + '</strong>. ' +
                   'Everyone at University Animal Clinic is thinking of you.'
                 : '';
-            var introBody = usingMember
+            var introBody = bereavement
+                ? 'Below is a summary of the care ' + petName + ' received during the current plan year. ' +
+                  'Everything has been settled at your member pricing rather than our regular prices.'
+                : usingMember
                 ? 'Below is a summary of the care ' + petName + ' received on the wellness plan. ' +
                   'Services are shown at your plan rate rather than at retail prices, set against the ' +
                   'payments you made into the plan &mdash; the difference between the two is the final amount.'
@@ -539,7 +575,10 @@
             // The outcome is stated up front so nobody has to work through a
             // table to find out whether money is owed or coming back.
             let headlineHtml = '';
-            if (data.balance < -0.005) {
+            if (bereavement) {
+                // Intentionally empty: the amount comes last, after the care
+                // received and the savings, never as the first thing they see.
+            } else if (data.balance < -0.005) {
                 headlineHtml = `
                     <div class="headline-notice refund">
                         <strong>A refund of ${formatCurrency(data.balance)} is due to you.</strong>
@@ -599,7 +638,29 @@
 
             // Contextual message
             let contextHtml = '';
-            if (data.balance > 0.005) {
+            if (bereavement && data.balance > 0.005) {
+                contextHtml = `
+                    <div class="context-message gentle">
+                        There is no rush on this at all. Whenever you're ready, you can call us at
+                        <strong>(941) 355-7707</strong> or stop by the front desk. If now isn't a good
+                        time, just let us know and we'll figure it out together.
+                    </div>
+                `;
+            } else if (bereavement && data.balance < -0.005) {
+                contextHtml = `
+                    <div class="context-message gentle">
+                        We'll be mailing you a check for the amount shown above to the address we have on
+                        file. Please allow 6 to 8 weeks. If your mailing address has changed, just give us
+                        a call at <strong>(941) 355-7707</strong>.
+                    </div>
+                `;
+            } else if (bereavement) {
+                contextHtml = `
+                    <div class="context-message gentle">
+                        The payments you made cover everything, so there is nothing more you need to do.
+                    </div>
+                `;
+            } else if (data.balance > 0.005) {
                 contextHtml = `
                     <div class="context-message payment">
                         <strong>📞 Payment Reminder:</strong> If you have not already done so, please contact University Animal Clinic at <strong>(941) 355-7707</strong> to arrange payment for the outstanding balance shown above. Our team will be happy to assist you with any questions regarding your account.
@@ -613,6 +674,56 @@
                 `;
             }
 
+            // Bereavement: walk down from the regular value of care to the
+            // remaining amount, with the savings shown as their own figure.
+            let careValueHtml = '';
+            if (bereavement) {
+                const pct = retailValue > 0 ? Math.round(savings / retailValue * 100) : 0;
+                const endLabel = data.balance > 0.005 ? 'Remaining amount'
+                               : data.balance < -0.005 ? 'Refund to you'
+                               : 'Remaining amount';
+                careValueHtml = `
+                    <div class="care-value">
+                        <h3>The care ${petName} received</h3>
+                        <p class="cv-sub">During the current plan year</p>
+                        <div class="calc-summary">
+                            <div class="calc-row">
+                                <span class="calc-label">Regular value of care received</span>
+                                <span class="calc-value">${formatCurrency(retailValue)}</span>
+                            </div>
+                            ${savings > 0.005 ? `
+                            <div class="calc-row">
+                                <span class="calc-label"><span class="calc-op">&minus;</span>Member pricing kept in place</span>
+                                <span class="calc-value">${formatCurrency(savings)}</span>
+                            </div>
+                            <div class="calc-row">
+                                <span class="calc-label"><span class="calc-op">=</span>Care settled at your plan rate</span>
+                                <span class="calc-value">${formatCurrency(data.totalServices)}</span>
+                            </div>` : ''}
+                            <div class="calc-row">
+                                <span class="calc-label"><span class="calc-op">&minus;</span>Payments you made into the plan</span>
+                                <span class="calc-value">${formatCurrency(data.totalPayments)}</span>
+                            </div>
+                            <div class="calc-row equation-result">
+                                <span class="calc-label"><span class="calc-op">=</span>${endLabel}</span>
+                                <span class="calc-value">${formatCurrency(data.balance)}</span>
+                            </div>
+                        </div>
+                        ${savings > 0.005 ? `
+                        <div class="savings-box">
+                            <div>
+                                <div class="sv-label">What your plan saved you</div>
+                                <div class="sv-note">${pct}% off our regular prices</div>
+                            </div>
+                            <div class="sv-amount">${formatCurrency(savings)}</div>
+                        </div>` : ''}
+                    </div>
+                `;
+            }
+
+            const docTitle = bereavement ? 'Wellness Plan Summary' : 'Wellness Plan Cancellation Summary';
+            document.title = 'University Animal Clinic - ' + docTitle;
+
             // Render content
             content.innerHTML = `
                 <div class="cancel-header">
@@ -621,7 +732,7 @@
                             <img src="${LOGO_BASE64}" alt="University Animal Clinic">
                         </div>
                         <div class="header-text">
-                            <p>Wellness Plan Cancellation Summary</p>
+                            <p>${docTitle}</p>
                         </div>
                     </div>
                 </div>
@@ -637,7 +748,7 @@
                             <div class="info-value">${esc(data.petName)}</div>
                         </div>
                         <div class="info-item">
-                            <div class="info-label">Cancellation Date</div>
+                            <div class="info-label">${bereavement ? 'Plan Closed' : 'Cancellation Date'}</div>
                             <div class="info-value">${esc(data.cancelDate)}</div>
                         </div>
                     </div>
@@ -648,6 +759,8 @@
                     </div>
 
                     ${headlineHtml}
+                    ${careValueHtml}
+                    ${bereavement ? '<h3 class="details-heading">Service details</h3>' : ''}
 
                     <table class="services-table">
                         <thead>
@@ -664,7 +777,7 @@
                         </tbody>
                     </table>
 
-                    <div class="calc-summary">
+                    <div class="calc-summary"${bereavement ? ' style="display:none"' : ''}>
                         <div class="calc-row">
                             <span class="calc-label">${servicesRowLabel}</span>
                             <span class="calc-value">${formatCurrency(data.totalServices)}</span>
@@ -680,7 +793,7 @@
                         </div>
                     </div>
 
-                    <div class="result-box ${resultClass}">
+                    <div class="result-box ${resultClass}"${bereavement ? ' style="display:none"' : ''}>
                         <span class="result-label">${resultLabel}</span>
                         <span class="result-amount">${formatCurrency(data.balance)}</span>
                     </div>

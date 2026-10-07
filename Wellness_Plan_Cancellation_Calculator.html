@@ -1149,6 +1149,40 @@
         }
 
         .btn-generate { font-weight: 700; }
+
+        /* ===== Email review (pet passed away) =====
+           Staff see the whole letter, can add a personal line anywhere, and
+           the dollar figures are checked against the calculation on send. */
+        .review-modal[hidden] { display: none; }
+        .review-modal { position: fixed; inset: 0; z-index: 4500; display: flex;
+            align-items: center; justify-content: center; padding: 24px; }
+        .review-modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.55); }
+        .review-modal-panel { position: relative; background: white; border-radius: 14px;
+            width: min(760px, 100%); max-height: 100%; display: flex; flex-direction: column;
+            overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,0.3); }
+        .review-modal-head { padding: 20px 24px 12px; border-bottom: 1px solid var(--gray-200); }
+        .review-modal-head h2 { margin: 0; font-size: 19px; color: var(--gray-700); }
+        .review-tip { margin: 8px 0 0; font-size: 13.5px; color: #6a5300; background: #FFF8E1;
+            border-left: 4px solid #FFD700; padding: 8px 12px; border-radius: 4px; line-height: 1.5; }
+        .review-body { padding: 16px 24px; overflow-y: auto; }
+        .review-field { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 14px; }
+        .review-field label { width: 64px; color: var(--gray-500); font-weight: 600; }
+        .review-field input { flex: 1; padding: 8px 10px; border: 1px solid var(--gray-300);
+            border-radius: 6px; font-size: 14px; font-family: inherit; }
+        .review-field .review-to { flex: 1; font-size: 14px; color: var(--gray-700); }
+        #reviewEditor { border: 2px solid var(--gray-300); border-radius: 8px; padding: 18px 22px;
+            font-family: Arial, Helvetica, sans-serif; font-size: 15px; line-height: 1.7; color: #333;
+            min-height: 260px; outline: none; background: white; }
+        #reviewEditor:focus { border-color: #FFD700; }
+        #reviewEditor p { margin: 0 0 14px; }
+        #reviewEditor .locked-link { background: #f5f5f5; border-radius: 6px; padding: 8px 10px;
+            color: #555; user-select: none; }
+        #reviewEditor .locked-link a { color: #8a6d00; font-weight: 700; }
+        .review-error { display: none; margin: 12px 0 0; padding: 10px 12px; border-radius: 6px;
+            background: #FDECEA; color: #A50E0E; font-size: 13.5px; line-height: 1.5; }
+        .review-error.visible { display: block; }
+        .review-modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 24px;
+            border-top: 1px solid var(--gray-200); background: var(--gray-light); }
         /* ===== Email setup dialog ===== */
         .emailcfg[hidden] { display: none; }
         .emailcfg {
@@ -1401,6 +1435,29 @@ UklGRnJrAQBXRUJQVlA4WAoAAAAwAAAAzwcA7gMASUNDUMgBAAAAAAHIAAAAAAQwAABtbnRyUkdCIFhZ
                 <button class="btn btn-secondary" onclick="closeClientSummary()">Close</button>
                 <button class="btn btn-primary" onclick="printClientSummary()">Print</button>
                 <button class="btn btn-email" onclick="emailClientSummary()">Email to Client</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Email review (pet passed away): staff read the letter, add a personal
+         line wherever it fits, then send. Dollar figures are verified on send. -->
+    <div class="review-modal" id="reviewModal" hidden>
+        <div class="review-modal-backdrop" onclick="closeEmailReview()"></div>
+        <div class="review-modal-panel" role="dialog" aria-modal="true" aria-labelledby="reviewTitle">
+            <div class="review-modal-head">
+                <h2 id="reviewTitle">Review the email before sending</h2>
+                <p class="review-tip">Read it through once. If you knew this pet, click anywhere in the
+                    letter and add a sentence of your own. Please don't change any dollar amounts.</p>
+            </div>
+            <div class="review-body">
+                <div class="review-field"><label>To</label><span class="review-to" id="reviewTo"></span></div>
+                <div class="review-field"><label for="reviewSubject">Subject</label><input type="text" id="reviewSubject"></div>
+                <div id="reviewEditor" contenteditable="true" spellcheck="true"></div>
+                <div class="review-error" id="reviewError"></div>
+            </div>
+            <div class="review-modal-actions">
+                <button class="btn btn-secondary" onclick="closeEmailReview()">Back</button>
+                <button class="btn btn-email" id="reviewSendBtn" onclick="sendReviewedEmail()">Send Email</button>
             </div>
         </div>
     </div>
@@ -2352,13 +2409,237 @@ function printClientSummary() {
 }
 
 function emailClientSummary() {
+    if (currentReasonCode() === 'deceased') { openEmailReview(_summaryEmailLink); return; }
     emailCancellation(_summaryEmailLink);
+}
+
+// ============================================================
+// BEREAVEMENT LETTER
+// Every factual sentence is either built from the calculation or only
+// appears when it is true for this pet (e.g. the "on us" sentence only
+// when visits or trims actually went over the plan's cap).
+// ============================================================
+function _firstName(full) {
+    var n = (full || '').trim();
+    if (!n) return '';
+    if (n.indexOf(',') !== -1) n = n.split(',')[1].trim();          // "Last, First"
+    var parts = n.split(/\s+/).filter(function (w) {
+        return !/^(mr|mrs|ms|miss|dr|mx)\.?$/i.test(w);
+    });
+    return parts[0] || n.split(/\s+/)[0];
+}
+
+function _money(n) {
+    return '$' + Math.abs(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+function _joinList(items) {
+    if (items.length <= 1) return items.join('');
+    if (items.length === 2) return items[0] + ' and ' + items[1];
+    return items.slice(0, -1).join(', ') + ' and ' + items[items.length - 1];
+}
+
+var CAP_PLURALS = { WPOF: 'office visits', WPNAIL: 'nail trims' };
+
+function buildBereavementLetter(data) {
+    var pet = (data.petName && data.petName !== 'Your Pet') ? data.petName : 'your pet';
+    var first = _firstName(document.getElementById('clientName').value);
+
+    var retail = 0;
+    (data.services || []).forEach(function (s) {
+        retail += (Number(s.retailPrice) || 0) * (Number(s.qty) || 0) + (Number(s.fee) || 0);
+    });
+    retail = Math.round(retail * 100) / 100;
+    if (retail < data.totalServices) retail = data.totalServices;
+    var savings = Math.round((retail - data.totalServices) * 100) / 100;
+
+    var capped = (data.services || []).filter(function (s) { return s.capped; })
+        .map(function (s) { return CAP_PLURALS[s.code] || s.name.toLowerCase(); });
+
+    var paras = [];
+    paras.push(first ? 'Hi ' + first + ',' : 'Hello,');
+    paras.push("We've been thinking about you since " + pet + " passed. Losing a member of the family " +
+               "is so hard, and all of us here are so sorry.");
+    paras.push("We wanted to take care of one last thing so it isn't on your mind. We've closed out " +
+               pet + "'s wellness plan and stopped the monthly payments.");
+
+    if (data.totalServices > 0.005) {
+        var p = 'We also made sure the plan worked in your favor. All of ' + pet + "'s care has been " +
+                'settled at your member pricing instead of our regular prices.';
+        if (capped.length) {
+            p += ' The extra ' + _joinList(capped) + ' beyond what the plan covers are on us as well.';
+        }
+        if (savings > 0.005) {
+            p += ' During the current plan year ' + pet + ' received ' + _money(retail) +
+                 ' in care, and your plan pricing saved you ' + _money(savings) + ' of that.';
+        }
+        paras.push(p);
+    }
+
+    if (data.balance > 0.005) {
+        paras.push("After the payments you've already made, " + _money(data.balance) + ' remains. ' +
+                   "There is no rush on this at all. Whenever you're ready, you can call us at " +
+                   "(941) 355-7707 or stop by the front desk. If now isn't a good time, just let us " +
+                   "know and we'll figure it out together.");
+    } else if (data.balance < -0.005) {
+        paras.push("The payments you've already made were more than the cost of " + pet + "'s care, " +
+                   "so we'll be mailing you a check for " + _money(data.balance) + '. Please allow ' +
+                   '6 to 8 weeks for it to arrive.');
+    } else {
+        paras.push("The payments you've already made cover everything, so there is nothing more " +
+                   "you need to do.");
+    }
+
+    paras.push('{{LINK}}');
+    paras.push("Please know we're here for you, whether you have a question or just want to talk " +
+               'about ' + pet + '.');
+    paras.push('Warmly,\nEveryone at University Animal Clinic');
+
+    // Every dollar figure the letter states, for the check on send.
+    var text = paras.join('\n');
+    var amounts = (text.match(/\$[\d,]+\.\d{2}/g) || []).slice();
+
+    return {
+        subject: 'Thinking of you and ' + (pet === 'your pet' ? 'your pet' : pet),
+        paragraphs: paras,
+        linkLabel: 'View ' + (pet === 'your pet' ? 'the' : pet + "'s") + ' care summary',
+        amounts: amounts
+    };
+}
+
+var _review = null;   // { link, letter, data }
+
+function openEmailReview(prebuiltLink) {
+    if (!emailIsConfigured()) {
+        showToast('warning', 'Email Not Set Up',
+            'This computer has not been set up to send email. Use "Email setup" at the bottom of the page, or print the summary instead.');
+        return;
+    }
+    var clientEmail = document.getElementById('clientEmail').value.trim();
+    if (!clientEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clientEmail)) {
+        showToast('warning', 'Email Required', 'Please enter a valid client email address first.');
+        return;
+    }
+    var built = buildViewerLink(true);
+    if (!built.ok) { showToast(built.level, built.title, built.message); return; }
+    if (prebuiltLink && prebuiltLink !== built.link) {
+        showToast('warning', 'Summary Out Of Date',
+            'The figures changed after this summary was generated. Close and generate it again before sending.');
+        return;
+    }
+
+    var letter = buildBereavementLetter(built.data);
+    _review = { link: built.link, letter: letter, data: built.data };
+
+    document.getElementById('reviewTo').textContent = clientEmail;
+    document.getElementById('reviewSubject').value = letter.subject;
+
+    var ed = document.getElementById('reviewEditor');
+    ed.innerHTML = '';
+    letter.paragraphs.forEach(function (text) {
+        var p = document.createElement('p');
+        if (text === '{{LINK}}') {
+            p.className = 'locked-link';
+            p.contentEditable = 'false';
+            p.setAttribute('data-link', '1');
+            p.appendChild(document.createTextNode("If you'd like to see the full breakdown, it's here: "));
+            var a = document.createElement('a');
+            a.href = built.link; a.target = '_blank'; a.rel = 'noopener noreferrer';
+            a.textContent = letter.linkLabel;
+            p.appendChild(a);
+        } else {
+            text.split('\n').forEach(function (line, i) {
+                if (i) p.appendChild(document.createElement('br'));
+                p.appendChild(document.createTextNode(line));
+            });
+        }
+        ed.appendChild(p);
+    });
+
+    var err = document.getElementById('reviewError');
+    err.classList.remove('visible'); err.textContent = '';
+    document.getElementById('reviewModal').hidden = false;
+}
+
+function closeEmailReview() {
+    document.getElementById('reviewModal').hidden = true;
+}
+
+function _escHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;');
+}
+
+// Reads the edited letter back as plain paragraphs. Formatting pasted in from
+// elsewhere is dropped on purpose; only the words travel.
+function _readEditor() {
+    var ed = document.getElementById('reviewEditor');
+    var blocks = [], hasLink = false;
+    ed.childNodes.forEach(function (n) {
+        if (n.nodeType === 1 && n.getAttribute('data-link')) { hasLink = true; blocks.push({ link: true }); return; }
+        var t = (n.nodeType === 3 ? n.textContent : n.innerText) || '';
+        t = t.replace(/\u00a0/g, ' ').replace(/\n{2,}/g, '\n').trim();
+        if (t) blocks.push({ text: t });
+    });
+    return { blocks: blocks, hasLink: hasLink };
+}
+
+function _checkAmounts(blocks, expected) {
+    var found = [];
+    blocks.forEach(function (b) {
+        if (b.text) found = found.concat(b.text.match(/\$\s?[\d,]+(?:\.\d+)?/g) || []);
+    });
+    found = found.map(function (a) { return a.replace(/\s/g, ''); });
+    var missing = expected.slice(), extra = [];
+    found.forEach(function (a) {
+        var i = missing.indexOf(a);
+        if (i !== -1) missing.splice(i, 1); else extra.push(a);
+    });
+    return { missing: missing, extra: extra };
+}
+
+function sendReviewedEmail() {
+    if (!_review) return;
+    var err = document.getElementById('reviewError');
+    var read = _readEditor();
+    var problems = [];
+
+    if (!read.hasLink) problems.push('The link to the care summary was removed. Click Back, then Email to Client again to start over.');
+    var chk = _checkAmounts(read.blocks, _review.letter.amounts);
+    if (chk.missing.length) problems.push('These amounts from the calculation are missing or were changed: ' + chk.missing.join(', ') + '.');
+    if (chk.extra.length) problems.push('These amounts are not from the calculation: ' + chk.extra.join(', ') + '. Please remove or correct them.');
+    var subject = document.getElementById('reviewSubject').value.trim();
+    if (!subject) problems.push('Please add a subject line.');
+
+    if (problems.length) {
+        err.innerHTML = '<strong>Not sent.</strong> ' + problems.map(_escHtml).join(' ');
+        err.classList.add('visible');
+        return;
+    }
+    err.classList.remove('visible');
+
+    var body = read.blocks.map(function (b) {
+        if (b.link) {
+            return '<p style="margin:0 0 18px;">If you\'d like to see the full breakdown, it\'s here: ' +
+                   '<a href="' + _escHtml(_review.link) + '" target="_blank" style="color:#8a6d00;font-weight:bold;">' +
+                   _escHtml(_review.letter.linkLabel) + '</a></p>';
+        }
+        return '<p style="margin:0 0 18px;">' + _escHtml(b.text).replace(/\n/g, '<br>') + '</p>';
+    }).join('');
+
+    var html =
+        '<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;' +
+        'padding:32px 28px;font-size:15px;line-height:1.7;color:#333;">' + body +
+        '<p style="margin:28px 0 0;padding-top:14px;border-top:1px solid #eee;font-size:12px;color:#999;">' +
+        'University Animal Clinic &bull; 7250 Canon St., Sarasota, FL 34240 &bull; (941) 355-7707</p></div>';
+
+    emailCancellation(_review.link, { subject: subject, html: html, onSent: closeEmailReview });
 }
 
 // ============================================================
 // EMAIL CANCELLATION
 // ============================================================
-function emailCancellation(prebuiltLink) {
+function emailCancellation(prebuiltLink, reviewed) {
     if (!emailIsConfigured()) {
         showToast('warning', 'Email Not Set Up',
             'This computer has not been set up to send email. Use "Email setup" at the bottom of the page, or print the summary instead.');
@@ -2401,10 +2682,10 @@ function emailCancellation(prebuiltLink) {
 
     console.log('Cancellation Viewer Link:', viewerLink);
 
-    var messageHTML = generateEmailHTML(viewerLink);
+    var messageHTML = reviewed ? reviewed.html : generateEmailHTML(viewerLink);
 
     // Show sending state
-    var emailBtn = document.querySelector('.btn-email');
+    var emailBtn = reviewed ? document.getElementById('reviewSendBtn') : document.querySelector('.btn-email');
     var originalText = emailBtn.innerHTML;
     emailBtn.innerHTML = 'Sending...';
     emailBtn.disabled = true;
@@ -2414,7 +2695,11 @@ function emailCancellation(prebuiltLink) {
         to_email: clientEmail,
         pet_name: cancellationData.petName,
         plan_name: cancellationData.planName,
-        message_html: messageHTML
+        message_html: messageHTML,
+        // The EmailJS template's Subject field must be set to {{subject}}
+        // for this to be used. Standard cancellations keep the old wording.
+        subject: reviewed ? reviewed.subject
+                          : 'Wellness Plan Cancellation Summary for ' + cancellationData.petName
     };
 
     var cfg = getEmailConfig();
@@ -2427,6 +2712,7 @@ function emailCancellation(prebuiltLink) {
                 emailBtn.disabled = false;
             }, 2000);
             showToast('success', 'Email Sent!', 'Cancellation summary sent successfully to ' + clientEmail);
+            if (reviewed && reviewed.onSent) reviewed.onSent();
         })
         .catch(function(error) {
             emailBtn.innerHTML = originalText;
