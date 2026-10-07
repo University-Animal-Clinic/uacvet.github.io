@@ -2696,10 +2696,10 @@ function emailCancellation(prebuiltLink, reviewed) {
         pet_name: cancellationData.petName,
         plan_name: cancellationData.planName,
         message_html: messageHTML,
-        // The EmailJS template's Subject field must be set to {{subject}}
-        // for this to be used. Standard cancellations keep the old wording.
+        // The EmailJS template's Subject field is {{subject}} (set 2026-10-07).
+        // Standard cancellations keep the subject the template used before.
         subject: reviewed ? reviewed.subject
-                          : 'Wellness Plan Cancellation Summary for ' + cancellationData.petName
+                          : 'Wellness Plan Cancellation - ' + cancellationData.petName + ' | University Animal Clinic'
     };
 
     var cfg = getEmailConfig();
